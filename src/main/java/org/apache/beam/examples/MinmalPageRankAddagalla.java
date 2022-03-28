@@ -43,7 +43,7 @@ import org.apache.beam.sdk.values.TypeDescriptors;
 /**
  * An example that counts words in Shakespeare.
  *
- * <p>This class, {@link MinmalPageRankAddagalla}, is the first in a series of four successively more
+ * <p>This class, {@link MinimalWordCount}, is the first in a series of four successively more
  * detailed 'word count' examples. Here, for simplicity, we don't show any error-checking or
  * argument processing, and focus on construction of the pipeline, which chains together the
  * application of core transforms.
@@ -99,7 +99,17 @@ public class MinmalPageRankAddagalla {
     // the input text (a set of Shakespeare's texts).
 
     // This example reads from a public dataset containing the text of King Lear.
-    p.apply(TextIO.read().from("gs://apache-beam-samples/shakespeare/kinglear.txt"))
+    //
+    // DC: We don't need king lear....
+    // We want to read from a folder - assign to a variable since it may change.
+    // We want to read from a file - just one - we need the file name - assign to a variable. 
+
+    String dataFolder = "web04";
+    String dataFile = "go.md";
+    String dataPath = dataFolder + "/" + dataFile;
+    //p.apply(TextIO.read().from("gs://apache-beam-samples/shakespeare/kinglear.txt"))
+
+    p.apply(TextIO.read().from(dataPath))
 
         // Concept #2: Apply a FlatMapElements transform the PCollection of text lines.
         // This transform splits the lines in PCollection<String>, where each element is an
