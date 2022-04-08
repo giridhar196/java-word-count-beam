@@ -2,7 +2,6 @@ C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\a
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\subprocess\kernel\SubProcessKernel.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\complete\game\UserScore.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\MinimalWordCount.java
-C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\MinmalPageRankAddagalla.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\subprocess\kernel\SubProcessCommandLineArgs.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\common\WriteOneFilePerWindow.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\complete\game\injector\Injector.java
@@ -16,6 +15,7 @@ C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\a
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\complete\game\utils\GameConstants.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\DebuggingWordCount.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\complete\game\injector\RetryHttpInitializerWrapper.java
+C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\MinimalPageRankAddagalla.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\common\ExampleBigQueryTableOptions.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\subprocess\configuration\SubProcessConfiguration.java
 C:\Users\girid\OneDrive\Documents\44517\java-word-count-beam\src\main\java\org\apache\beam\examples\subprocess\ExampleEchoPipeline.java

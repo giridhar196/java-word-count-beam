@@ -17,118 +17,216 @@
  */
 package org.apache.beam.examples;
 
-// beam-playground:
-//   name: MinimalWordCount
-//   description: An example that counts words in Shakespeare's works.
-//   multifile: false
-//   default_example: true
-//   context_line: 71
-//   categories:
-//     - Combiners
-//     - Filtering
-//     - IO
-//     - Core Transforms
-//     - Quickstart
-
-import java.util.Arrays;
+import java.io.IOException;
+import java.util.concurrent.ThreadLocalRandom;
+import org.apache.beam.examples.common.ExampleBigQueryTableOptions;
+import org.apache.beam.examples.common.ExampleOptions;
+import org.apache.beam.examples.common.WriteOneFilePerWindow;
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.io.TextIO;
+import org.apache.beam.sdk.options.Default;
+import org.apache.beam.sdk.options.DefaultValueFactory;
+import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.sdk.transforms.Count;
-import org.apache.beam.sdk.transforms.Filter;
-import org.apache.beam.sdk.transforms.FlatMapElements;
+import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.MapElements;
+import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.windowing.FixedWindows;
+import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
-import org.apache.beam.sdk.values.TypeDescriptors;
+import org.apache.beam.sdk.values.PCollection;
+import org.joda.time.Duration;
+import org.joda.time.Instant;
 
 /**
- * An example that counts words in Shakespeare.
+ * An example that counts words in text, and can run over either unbounded or bounded input
+ * collections.
  *
- * <p>This class, {@link MinimalWordCount}, is the first in a series of four successively more
- * detailed 'word count' examples. Here, for simplicity, we don't show any error-checking or
- * argument processing, and focus on construction of the pipeline, which chains together the
- * application of core transforms.
+ * <p>This class, {@link WindowedWordCount}, is the last in a series of four successively more
+ * detailed 'word count' examples. First take a look at {@link MinimalWordCount}, {@link WordCount},
+ * and {@link DebuggingWordCount}.
  *
- * <p>Next, see the {@link WordCount} pipeline, then the {@link DebuggingWordCount}, and finally the
- * {@link WindowedWordCount} pipeline, for more detailed examples that introduce additional
- * concepts.
+ * <p>Basic concepts, also in the MinimalWordCount, WordCount, and DebuggingWordCount examples:
+ * Reading text files; counting a PCollection; writing to GCS; executing a Pipeline both locally and
+ * using a selected runner; defining DoFns; user-defined PTransforms; defining PipelineOptions.
  *
- * <p>Concepts:
+ * <p>New Concepts:
  *
  * <pre>
- *   1. Reading data from text files
- *   2. Specifying 'inline' transforms
- *   3. Counting items in a PCollection
- *   4. Writing data to text files
+ *   1. Unbounded and bounded pipeline input modes
+ *   2. Adding timestamps to data
+ *   3. Windowing
+ *   4. Re-using PTransforms over windowed PCollections
+ *   5. Accessing the window of an element
+ *   6. Writing data to per-window text files
  * </pre>
  *
- * <p>No arguments are required to run this pipeline. It will be executed with the DirectRunner. You
- * can see the results in the output files in your current working directory, with names like
- * "wordcounts-00001-of-00005. When running on a distributed service, you would use an appropriate
- * file service.
+ * <p>By default, the examples will run with the {@code DirectRunner}. To change the runner,
+ * specify:
+ *
+ * <pre>{@code
+ * --runner=YOUR_SELECTED_RUNNER
+ * }</pre>
+ *
+ * See examples/java/README.md for instructions about how to configure different runners.
+ *
+ * <p>To execute this pipeline locally, specify a local output file (if using the {@code
+ * DirectRunner}) or output prefix on a supported distributed file system.
+ *
+ * <pre>{@code
+ * --output=[YOUR_LOCAL_FILE | YOUR_OUTPUT_PREFIX]
+ * }</pre>
+ *
+ * <p>The input file defaults to a public data set containing the text of of King Lear, by William
+ * Shakespeare. You can override it and choose your own input with {@code --inputFile}.
+ *
+ * <p>By default, the pipeline will do fixed windowing, on 10-minute windows. You can change this
+ * interval by setting the {@code --windowSize} parameter, e.g. {@code --windowSize=15} for
+ * 15-minute windows.
+ *
+ * <p>The example will try to cancel the pipeline on the signal to terminate the process (CTRL-C).
  */
-public class MinimalWordCount {
+public class WindowedWordCount {
+  static final int WINDOW_SIZE = 10; // Default window duration in minutes
+  /**
+   * Concept #2: A DoFn that sets the data element timestamp. This is a silly method, just for this
+   * example, for the bounded data case.
+   *
+   * <p>Imagine that many ghosts of Shakespeare are all typing madly at the same time to recreate
+   * his masterworks. Each line of the corpus will get a random associated timestamp somewhere in a
+   * 2-hour period.
+   */
+  static class AddTimestampFn extends DoFn<String, String> {
+    private final Instant minTimestamp;
+    private final Instant maxTimestamp;
 
-  public static void main(String[] args) {
+    AddTimestampFn(Instant minTimestamp, Instant maxTimestamp) {
+      this.minTimestamp = minTimestamp;
+      this.maxTimestamp = maxTimestamp;
+    }
 
-    // Create a PipelineOptions object. This object lets us set various execution
-    // options for our pipeline, such as the runner you wish to use. This example
-    // will run with the DirectRunner by default, based on the class path configured
-    // in its dependencies.
-    PipelineOptions options = PipelineOptionsFactory.create();
+    @ProcessElement
+    public void processElement(@Element String element, OutputReceiver<String> receiver) {
+      Instant randomTimestamp =
+          new Instant(
+              ThreadLocalRandom.current()
+                  .nextLong(minTimestamp.getMillis(), maxTimestamp.getMillis()));
 
-    // In order to run your pipeline, you need to make following runner specific changes:
-    //
-    // CHANGE 1/3: Select a Beam runner, such as BlockingDataflowRunner
-    // or FlinkRunner.
-    // CHANGE 2/3: Specify runner-required options.
-    // For BlockingDataflowRunner, set project and temp location as follows:
-    //   DataflowPipelineOptions dataflowOptions = options.as(DataflowPipelineOptions.class);
-    //   dataflowOptions.setRunner(BlockingDataflowRunner.class);
-    //   dataflowOptions.setProject("SET_YOUR_PROJECT_ID_HERE");
-    //   dataflowOptions.setTempLocation("gs://SET_YOUR_BUCKET_NAME_HERE/AND_TEMP_DIRECTORY");
-    // For FlinkRunner, set the runner as follows. See {@code FlinkPipelineOptions}
-    // for more details.
-    //   options.as(FlinkPipelineOptions.class)
-    //      .setRunner(FlinkRunner.class);
+      /*
+       * Concept #2: Set the data element with that timestamp.
+       */
+      receiver.outputWithTimestamp(element, randomTimestamp);
+    }
+  }
 
-    // Create the Pipeline object with the options we defined above
-    Pipeline p = Pipeline.create(options);
+  /** A {@link DefaultValueFactory} that returns the current system time. */
+  public static class DefaultToCurrentSystemTime implements DefaultValueFactory<Long> {
+    @Override
+    public Long create(PipelineOptions options) {
+      return System.currentTimeMillis();
+    }
+  }
 
-    // Concept #1: Apply a root transform to the pipeline; in this case, TextIO.Read to read a set
-    // of input text files. TextIO.Read returns a PCollection where each element is one line from
-    // the input text (a set of Shakespeare's texts).
+  /** A {@link DefaultValueFactory} that returns the minimum timestamp plus one hour. */
+  public static class DefaultToMinTimestampPlusOneHour implements DefaultValueFactory<Long> {
+    @Override
+    public Long create(PipelineOptions options) {
+      return options.as(Options.class).getMinTimestampMillis()
+          + Duration.standardHours(1).getMillis();
+    }
+  }
 
-    // This example reads from a public dataset containing the text of King Lear.
-    p.apply(TextIO.read().from("gs://apache-beam-samples/shakespeare/kinglear.txt"))
+  /**
+   * Options for {@link WindowedWordCount}.
+   *
+   * <p>Inherits standard example configuration options, which allow specification of the runner, as
+   * well as the {@link WordCount.WordCountOptions} support for specification of the input and
+   * output files.
+   */
+  public interface Options
+      extends WordCount.WordCountOptions, ExampleOptions, ExampleBigQueryTableOptions {
+    @Description("Fixed window duration, in minutes")
+    @Default.Integer(WINDOW_SIZE)
+    Integer getWindowSize();
 
-        // Concept #2: Apply a FlatMapElements transform the PCollection of text lines.
-        // This transform splits the lines in PCollection<String>, where each element is an
-        // individual word in Shakespeare's collected texts.
-        .apply(
-            FlatMapElements.into(TypeDescriptors.strings())
-                .via((String line) -> Arrays.asList(line.split("[^\\p{L}]+"))))
-        // We use a Filter transform to avoid empty word
-        .apply(Filter.by((String word) -> !word.isEmpty()))
-        // Concept #3: Apply the Count transform to our PCollection of individual words. The Count
-        // transform returns a new PCollection of key/value pairs, where each key represents a
-        // unique word in the text. The associated value is the occurrence count for that word.
-        .apply(Count.perElement())
-        // Apply a MapElements transform that formats our PCollection of word counts into a
-        // printable string, suitable for writing to an output file.
-        .apply(
-            MapElements.into(TypeDescriptors.strings())
-                .via(
-                    (KV<String, Long> wordCount) ->
-                        wordCount.getKey() + ": " + wordCount.getValue()))
-        // Concept #4: Apply a write transform, TextIO.Write, at the end of the pipeline.
-        // TextIO.Write writes the contents of a PCollection (in this case, our PCollection of
-        // formatted strings) to a series of text files.
-        //
-        // By default, it will write to a set of files with names like wordcounts-00001-of-00005
-        .apply(TextIO.write().to("wordcounts"));
+    void setWindowSize(Integer value);
 
-    p.run().waitUntilFinish();
+    @Description("Minimum randomly assigned timestamp, in milliseconds-since-epoch")
+    @Default.InstanceFactory(DefaultToCurrentSystemTime.class)
+    Long getMinTimestampMillis();
+
+    void setMinTimestampMillis(Long value);
+
+    @Description("Maximum randomly assigned timestamp, in milliseconds-since-epoch")
+    @Default.InstanceFactory(DefaultToMinTimestampPlusOneHour.class)
+    Long getMaxTimestampMillis();
+
+    void setMaxTimestampMillis(Long value);
+
+    @Description("Fixed number of shards to produce per window")
+    Integer getNumShards();
+
+    void setNumShards(Integer numShards);
+  }
+
+  static void runWindowedWordCount(Options options) throws IOException {
+    final String output = options.getOutput();
+    final Instant minTimestamp = new Instant(options.getMinTimestampMillis());
+    final Instant maxTimestamp = new Instant(options.getMaxTimestampMillis());
+
+    Pipeline pipeline = Pipeline.create(options);
+
+    /*
+     * Concept #1: the Beam SDK lets us run the same pipeline with either a bounded or
+     * unbounded input source.
+     */
+    PCollection<String> input =
+        pipeline
+            /* Read from the GCS file. */
+            .apply(TextIO.read().from(options.getInputFile()))
+            // Concept #2: Add an element timestamp, using an artificial time just to show
+            // windowing.
+            // See AddTimestampFn for more detail on this.
+            .apply(ParDo.of(new AddTimestampFn(minTimestamp, maxTimestamp)));
+
+    /*
+     * Concept #3: Window into fixed windows. The fixed window size for this example defaults to 1
+     * minute (you can change this with a command-line option). See the documentation for more
+     * information on how fixed windows work, and for information on the other types of windowing
+     * available (e.g., sliding windows).
+     */
+    PCollection<String> windowedWords =
+        input.apply(
+            Window.into(FixedWindows.of(Duration.standardMinutes(options.getWindowSize()))));
+
+    /*
+     * Concept #4: Re-use our existing CountWords transform that does not have knowledge of
+     * windows over a PCollection containing windowed values.
+     */
+    PCollection<KV<String, Long>> wordCounts = windowedWords.apply(new WordCount.CountWords());
+
+    /*
+     * Concept #5: Format the results and write to a sharded file partitioned by window, using a
+     * simple ParDo operation. Because there may be failures followed by retries, the
+     * writes must be idempotent, but the details of writing to files is elided here.
+     */
+    wordCounts
+        .apply(MapElements.via(new WordCount.FormatAsTextFn()))
+        .apply(new WriteOneFilePerWindow(output, options.getNumShards()));
+
+    PipelineResult result = pipeline.run();
+    try {
+      result.waitUntilFinish();
+    } catch (Exception exc) {
+      result.cancel();
+    }
+  }
+
+  public static void main(String[] args) throws IOException {
+    Options options = PipelineOptionsFactory.fromArgs(args).withValidation().as(Options.class);
+
+    runWindowedWordCount(options);
   }
 }
